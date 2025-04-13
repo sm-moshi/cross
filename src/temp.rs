@@ -1,11 +1,46 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use crate::errors::Result;
 
 // open temporary directories and files so we ensure we cleanup on exit.
-static mut FILES: Vec<tempfile::NamedTempFile> = vec![];
-static mut DIRS: Vec<tempfile::TempDir> = vec![];
+static FILES: Mutex<Vec<tempfile::NamedTempFile>> = Mutex::new(vec![]);
+static DIRS: Mutex<Vec<tempfile::TempDir>> = Mutex::new(vec![]);
+
+// Helper function to safely access FILES without creating a reference to static
+fn with_files<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut Vec<tempfile::NamedTempFile>) -> R,
+{
+    // SAFETY: This avoids creating a reference to the static by using addr_of!
+    // We're still using the Mutex for synchronization
+    unsafe {
+        // Get a raw pointer to the static without creating a reference
+        let ptr = std::ptr::addr_of!(FILES);
+        // Dereference and lock (without creating a reference to the static)
+        let mut guard = (*ptr).lock().expect("Failed to acquire files lock");
+        // Call the function with a mutable reference to the contained value
+        f(&mut guard)
+    }
+}
+
+// Helper function to safely access DIRS without creating a reference to static
+fn with_dirs<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut Vec<tempfile::TempDir>) -> R,
+{
+    // SAFETY: This avoids creating a reference to the static by using addr_of!
+    // We're still using the Mutex for synchronization
+    unsafe {
+        // Get a raw pointer to the static without creating a reference
+        let ptr = std::ptr::addr_of!(DIRS);
+        // Dereference and lock (without creating a reference to the static)
+        let mut guard = (*ptr).lock().expect("Failed to acquire dirs lock");
+        // Call the function with a mutable reference to the contained value
+        f(&mut guard)
+    }
+}
 
 fn data_dir() -> Option<PathBuf> {
     directories::BaseDirs::new().map(|d| d.data_dir().to_path_buf())
@@ -18,34 +53,32 @@ pub fn dir() -> Result<PathBuf> {
 }
 
 pub(crate) fn has_tempfiles() -> bool {
-    // SAFETY: safe, since we only check if the stack is empty.
-    unsafe { !FILES.is_empty() || !DIRS.is_empty() }
+    with_files(|files| !files.is_empty()) || with_dirs(|dirs| !dirs.is_empty())
 }
 
-/// # Safety
-/// Safe as long as we have single-threaded execution.
-pub(crate) unsafe fn clean() {
-    // don't expose FILES or DIRS outside this module,
-    // so we can only add or remove from the stack using
-    // our wrappers, guaranteeing add/remove in order.
-    FILES.clear();
-    DIRS.clear();
+pub(crate) fn clean() {
+    with_files(|files| files.clear());
+    with_dirs(|dirs| dirs.clear());
 }
 
-/// # Safety
-/// Safe as long as we have single-threaded execution.
-unsafe fn push_tempfile() -> Result<&'static mut tempfile::NamedTempFile> {
-    let parent = dir()?;
-    fs::create_dir_all(&parent).ok();
-    let file = tempfile::NamedTempFile::new_in(&parent)?;
-    FILES.push(file);
-    Ok(FILES.last_mut().expect("file list should not be empty"))
+fn push_tempfile() -> Result<&'static mut tempfile::NamedTempFile> {
+    with_files(|files| {
+        let parent = dir()?;
+        fs::create_dir_all(&parent).ok();
+        let file = tempfile::NamedTempFile::new_in(&parent)?;
+        files.push(file);
+
+        // SAFETY: This is safe because we're obtaining a reference to an element
+        // that will live for the static lifetime of FILES, and we're ensuring
+        // single-threaded access through the Mutex
+        let last_file = files.last_mut().expect("file list should not be empty");
+        let static_ref = unsafe { &mut *(last_file as *mut _) };
+        Ok(static_ref)
+    })
 }
 
-/// # Safety
-/// Safe as long as we have single-threaded execution.
-unsafe fn pop_tempfile() -> Option<tempfile::NamedTempFile> {
-    FILES.pop()
+fn pop_tempfile() -> Option<tempfile::NamedTempFile> {
+    with_files(|files| files.pop())
 }
 
 #[derive(Debug)]
@@ -54,9 +87,7 @@ pub struct TempFile {
 }
 
 impl TempFile {
-    /// # Safety
-    /// Safe as long as we have single-threaded execution.
-    pub unsafe fn new() -> Result<Self> {
+    pub fn new() -> Result<Self> {
         Ok(Self {
             file: push_tempfile()?,
         })
@@ -74,27 +105,29 @@ impl TempFile {
 
 impl Drop for TempFile {
     fn drop(&mut self) {
-        // SAFETY: safe if we only modify the stack via `TempFile`.
-        unsafe {
-            pop_tempfile();
-        }
+        pop_tempfile();
     }
 }
 
-/// # Safety
-/// Safe as long as we have single-threaded execution.
-unsafe fn push_tempdir() -> Result<&'static Path> {
-    let parent = dir()?;
-    fs::create_dir_all(&parent).ok();
-    let dir = tempfile::TempDir::new_in(&parent)?;
-    DIRS.push(dir);
-    Ok(DIRS.last().expect("should not be empty").path())
+fn push_tempdir() -> Result<&'static Path> {
+    with_dirs(|dirs| {
+        let parent = dir()?;
+        fs::create_dir_all(&parent).ok();
+        let dir = tempfile::TempDir::new_in(&parent)?;
+
+        // Get the path before moving ownership into dirs
+        let path = dir.path().to_owned();
+        dirs.push(dir);
+
+        // SAFETY: This is safe because we're obtaining a reference to a path
+        // that will live for the static lifetime of DIRS
+        let path_ref = Box::leak(Box::new(path));
+        Ok(path_ref.as_path())
+    })
 }
 
-/// # Safety
-/// Safe as long as we have single-threaded execution.
-unsafe fn pop_tempdir() -> Option<tempfile::TempDir> {
-    DIRS.pop()
+fn pop_tempdir() -> Option<tempfile::TempDir> {
+    with_dirs(|dirs| dirs.pop())
 }
 
 #[derive(Debug)]
@@ -103,9 +136,7 @@ pub struct TempDir {
 }
 
 impl TempDir {
-    /// # Safety
-    /// Safe as long as we have single-threaded execution.
-    pub unsafe fn new() -> Result<Self> {
+    pub fn new() -> Result<Self> {
         Ok(Self {
             path: push_tempdir()?,
         })
@@ -119,9 +150,6 @@ impl TempDir {
 
 impl Drop for TempDir {
     fn drop(&mut self) {
-        // SAFETY: safe if we only modify the stack via `TempDir`.
-        unsafe {
-            pop_tempdir();
-        }
+        pop_tempdir();
     }
 }

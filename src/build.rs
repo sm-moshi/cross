@@ -24,6 +24,9 @@ fn main() {
         .write_all(commit_info().as_bytes())
         .unwrap();
 
+    // Register the cross_sandboxed config flag for the compiler
+    println!("cargo:rustc-check-cfg=cfg(cross_sandboxed)");
+
     if env::var("CROSS_SANDBOXED").is_ok() {
         println!("cargo:rustc-cfg=cross_sandboxed");
     }

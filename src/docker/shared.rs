@@ -2,6 +2,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Output};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::{env, fs, time};
 
 use super::custom::{Dockerfile, PreBuild};
@@ -530,7 +531,38 @@ pub const DEFAULT_TIMEOUT: u32 = 2;
 // instant kill in case of a non-graceful exit
 pub const NO_TIMEOUT: u32 = 0;
 
-pub(crate) static mut CHILD_CONTAINER: ChildContainer = ChildContainer::new();
+// we need to specify drops for the containers, but we
+// also need to ensure the drops are called on a
+// termination handler. we use an atomic bool to ensure
+// that the drop only gets called once, even if we have
+// the signal handle invoked multiple times or it fails.
+#[allow(missing_debug_implementations)]
+pub struct ChildContainer {
+    info: Option<ChildContainerInfo>,
+    exists: AtomicBool,
+}
+
+// Using a mutex to provide interior mutability instead of static mut
+pub(crate) static CHILD_CONTAINER: Mutex<ChildContainer> = Mutex::new(ChildContainer::new());
+
+// Helper function to access CHILD_CONTAINER without creating a reference to static
+fn with_child_container<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut ChildContainer) -> R,
+{
+    // SAFETY: This avoids creating a reference to the static by using addr_of!
+    // We're still using the Mutex for synchronization
+    unsafe {
+        // Get a raw pointer to the static without creating a reference
+        let ptr = std::ptr::addr_of!(CHILD_CONTAINER);
+        // Dereference and lock (without creating a reference to the static)
+        let mut guard = (*ptr)
+            .lock()
+            .expect("Failed to acquire child container lock");
+        // Call the function with a mutable reference to the contained value
+        f(&mut guard)
+    }
+}
 
 // the lack of [MessageInfo] is because it'd require a mutable reference,
 // since we don't need the functionality behind the [MessageInfo], we can just store the basic
@@ -543,15 +575,10 @@ pub(crate) struct ChildContainerInfo {
     verbosity: Verbosity,
 }
 
-// we need to specify drops for the containers, but we
-// also need to ensure the drops are called on a
-// termination handler. we use an atomic bool to ensure
-// that the drop only gets called once, even if we have
-// the signal handle invoked multiple times or it fails.
-#[allow(missing_debug_implementations)]
-pub struct ChildContainer {
-    info: Option<ChildContainerInfo>,
-    exists: AtomicBool,
+impl Default for ChildContainer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ChildContainer {
@@ -563,10 +590,9 @@ impl ChildContainer {
     }
 
     pub fn create(engine: Engine, name: String) -> Result<()> {
-        // SAFETY: guarded by an atomic swap
-        unsafe {
-            if !CHILD_CONTAINER.exists.swap(true, Ordering::SeqCst) {
-                CHILD_CONTAINER.info = Some(ChildContainerInfo {
+        with_child_container(|container| {
+            if !container.exists.swap(true, Ordering::SeqCst) {
+                container.info = Some(ChildContainerInfo {
                     engine,
                     name,
                     timeout: NO_TIMEOUT,
@@ -577,7 +603,7 @@ impl ChildContainer {
             } else {
                 eyre::bail!("attempted to create already existing container.");
             }
-        }
+        })
     }
 
     // the static functions have been placed by the internal functions to
@@ -589,7 +615,7 @@ impl ChildContainer {
 
     pub fn exists_static() -> bool {
         // SAFETY: an atomic load.
-        unsafe { CHILD_CONTAINER.exists() }
+        with_child_container(|container| container.exists())
     }
 
     // when the `docker run` command finished.
@@ -600,9 +626,7 @@ impl ChildContainer {
 
     pub fn exit_static() {
         // SAFETY: an atomic store.
-        unsafe {
-            CHILD_CONTAINER.exit();
-        }
+        with_child_container(|container| container.exit());
     }
 
     // when the `docker exec` command finished.
@@ -626,9 +650,7 @@ impl ChildContainer {
 
     pub fn finish_static(is_tty: bool, msg_info: &mut MessageInfo) {
         // SAFETY: internally guarded by an atomic load.
-        unsafe {
-            CHILD_CONTAINER.finish(is_tty, msg_info);
-        }
+        with_child_container(|container| container.finish(is_tty, msg_info));
     }
 
     // terminate the container early. leaves the struct in a valid
@@ -1518,7 +1540,7 @@ impl MountFinder {
         if cfg!(target_os = "windows") && host {
             // On Windows, we can not mount the directory name directly.
             // Instead, we convert the path to a linux compatible path.
-            return path.to_utf8().map(ToOwned::to_owned);
+            path.to_utf8().map(ToOwned::to_owned)
         } else if cfg!(target_os = "windows") {
             path.as_posix_absolute()
         } else {

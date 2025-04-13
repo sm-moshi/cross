@@ -289,10 +289,7 @@ pub fn setup_components(
         } else if !component_is_installed("rust-src", toolchain, msg_info)? {
             install_component("rust-src", toolchain, msg_info)?;
         }
-        if args
-            .subcommand
-            .clone()
-            .map_or(false, |sc| sc == crate::Subcommand::Clippy)
+        if (args.subcommand.clone() == Some(crate::Subcommand::Clippy))
             && !component_is_installed("clippy", toolchain, msg_info)?
         {
             install_component("clippy", toolchain, msg_info)?;
