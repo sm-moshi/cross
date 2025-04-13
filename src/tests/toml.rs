@@ -89,7 +89,7 @@ pub fn text_line_no(text: &str, index: usize) -> usize {
     let mut count = 0;
     for line in text.split('\n') {
         line_no += 1;
-        count += line.as_bytes().len() + 1;
+        count += line.len() + 1;
         if count >= index {
             break;
         }

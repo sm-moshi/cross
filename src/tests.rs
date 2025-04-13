@@ -38,7 +38,7 @@ pub fn walk_dir<'a>(
                 .any(|dir| e.file_name() == dir)
             {
                 return false;
-            } else if e.file_type().map_or(false, |f| f.is_dir()) {
+            } else if e.file_type().is_some_and(|f| f.is_dir()) {
                 return true;
             }
             ext(e.path().extension())

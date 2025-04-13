@@ -39,7 +39,7 @@ pub fn posix_parent(path: &str) -> Option<&str> {
     Path::new(path).parent()?.to_str()
 }
 
-impl<'a, 'b, 'c> ContainerDataVolume<'a, 'b, 'c> {
+impl ContainerDataVolume<'_, '_, '_> {
     // NOTE: `reldir` should be a relative POSIX path to the root directory
     // on windows, this should be something like `mnt/c`. that is, all paths
     // inside the container should not have the mount prefix.
@@ -115,7 +115,7 @@ impl<'a, 'b, 'c> ContainerDataVolume<'a, 'b, 'c> {
         // avoid any cached directories when copying
         // see https://bford.info/cachedir/
         // SAFETY: safe, single-threaded execution.
-        let tempdir = unsafe { temp::TempDir::new()? };
+        let tempdir = temp::TempDir::new()?;
         let temppath = tempdir.path();
         let had_symlinks = copy_dir(src, temppath, copy_symlinks, 0, |e, _| is_cachedir(e))?;
         warn_symlinks(had_symlinks, msg_info)?;
@@ -134,7 +134,7 @@ impl<'a, 'b, 'c> ContainerDataVolume<'a, 'b, 'c> {
         msg_info: &mut MessageInfo,
     ) -> Result<ExitStatus> {
         // SAFETY: safe, single-threaded execution.
-        let tempdir = unsafe { temp::TempDir::new()? };
+        let tempdir = temp::TempDir::new()?;
         let temppath = tempdir.path();
         for file in files {
             let src_path = src.join(file);
@@ -171,7 +171,7 @@ impl<'a, 'b, 'c> ContainerDataVolume<'a, 'b, 'c> {
         ));
 
         // SAFETY: safe, single-threaded execution.
-        let mut tempfile = unsafe { temp::TempFile::new()? };
+        let mut tempfile = temp::TempFile::new()?;
         for file in files {
             writeln!(tempfile.file(), "{mount_prefix}/{reldst}/{file}")?;
         }
@@ -286,7 +286,7 @@ impl<'a, 'b, 'c> ContainerDataVolume<'a, 'b, 'c> {
 
         // first, copy the shared libraries inside lib, all except rustlib.
         // SAFETY: safe, single-threaded execution.
-        let tempdir = unsafe { temp::TempDir::new()? };
+        let tempdir = temp::TempDir::new()?;
         let temppath = tempdir.path();
         file::create_dir_all(temppath.join(rustlib))?;
         let mut had_symlinks = copy_dir(
@@ -320,7 +320,7 @@ impl<'a, 'b, 'c> ContainerDataVolume<'a, 'b, 'c> {
         let rustlib = "lib/rustlib";
 
         // SAFETY: safe, single-threaded execution.
-        let tempdir = unsafe { temp::TempDir::new()? };
+        let tempdir = temp::TempDir::new()?;
         let temppath = tempdir.path();
         file::create_dir_all(temppath.join(rustlib))?;
         let had_symlinks = copy_dir(
@@ -1001,15 +1001,14 @@ symlink_recurse \"${{prefix}}\"
     {
         subcommand_or_exit(engine, "cp")?
             .arg("-a")
-            .arg(&format!("{container_id}:{mount_target_dir}",))
+            .arg(format!("{container_id}:{mount_target_dir}",))
             .arg(
                 package_dirs
                     .target()
                     .parent()
                     .expect("target directory should have a parent"),
             )
-            .run_and_get_status(msg_info, false)
-            .map_err::<eyre::ErrReport, _>(Into::into)?;
+            .run_and_get_status(msg_info, false)?;
     }
 
     ChildContainer::finish_static(is_tty, msg_info);
