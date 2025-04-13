@@ -143,8 +143,8 @@ base_release=$(latest_freebsd "${mirror}")
 bsd_url="${mirror}/${FREEBSD_ARCH}/${base_release}-RELEASE"
 
 main() {
-    local binutils=2.40 \
-        gcc=6.4.0 \
+    local binutils=2.44 \
+        gcc=14.2.0 \
         target="${ARCH}-unknown-freebsd${FREEBSD_MAJOR}"
 
     install_packages ca-certificates \
