@@ -6,8 +6,8 @@ set -euo pipefail
 # shellcheck disable=SC1091
 . lib.sh
 
-build_static_libffi () {
-    local version=3.0.13
+build_static_libffi() {
+    local version=3.4.8
 
     local td
     td="$(mktemp -d)"
@@ -26,12 +26,12 @@ build_static_libffi () {
     rm -rf "${td}"
 }
 
-build_static_libmount () {
-    local version_spec=2.23.2
-    local version=2.23
+build_static_libmount() {
+    local version_spec=2.41
+    local version=2.41
 
-    if_ubuntu_ge 22.04 version_spec=2.37.2
-    if_ubuntu_ge 22.04 version=2.37
+    if_ubuntu_ge 22.04 version_spec=2.41
+    if_ubuntu_ge 22.04 version=2.41
 
     local td
     td="$(mktemp -d)"
@@ -51,7 +51,7 @@ build_static_libmount () {
 
 
 build_static_libattr() {
-    local version=2.4.46
+    local version=2.5.2
 
     local td
     td="$(mktemp -d)"
@@ -77,7 +77,7 @@ build_static_libattr() {
 }
 
 build_static_libcap() {
-    local version=2.22
+    local version=2.75
 
     local td
     td="$(mktemp -d)"
@@ -95,7 +95,7 @@ build_static_libcap() {
 }
 
 build_static_pixman() {
-    local version=0.34.0
+    local version=0.44.2
 
     local td
     td="$(mktemp -d)"
@@ -114,7 +114,7 @@ build_static_pixman() {
 }
 
 build_static_slirp() {
-    local version=4.1.0
+    local version=4.9.0
 
     local td
     td="$(mktemp -d)"
@@ -211,7 +211,7 @@ main() {
     # ubuntu 16.04 only provides python3.5, so remove when we have a newer qemu.
     is_ge_python38=$(python3 -c "import sys; print(int(sys.version_info >= (3, 8)))")
     if [[ "${is_ge_python38}" == "1" ]]; then
-        if_ubuntu version=8.2.2
+        if_ubuntu version=9.2.3
         if_ubuntu install_packages ninja-build meson python3-pip libslirp-dev
         if_ubuntu build_static_slirp
     fi
