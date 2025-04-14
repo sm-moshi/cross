@@ -103,13 +103,11 @@ unsafe fn termination_handler() {
     // a global CString and `Vec<CString>`, respectively. this atomic guard
     // makes this safe regardless.
     unsafe {
-        // Access the static container via addr_of! to avoid creating a reference
-        let ptr = std::ptr::addr_of!(docker::CHILD_CONTAINER);
-        // Lock and access the container
-        let mut guard = (*ptr)
-            .lock()
-            .expect("Failed to acquire child container lock in termination handler");
-        guard.terminate();
+        // Get a mutable reference to the global container
+        let container = &mut *std::ptr::addr_of_mut!(docker::CHILD_CONTAINER);
+
+        // Call terminate which handles its own internal state
+        container.terminate();
     }
 
     // all termination exit codes are 128 + signal code. the exit code is

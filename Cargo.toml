@@ -43,7 +43,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.140", features = ["raw_value"] }
 serde_ignored = "0.1.11"
 shell-words = "1.1.0"
-const-sha1 = "0.2.0"
+const-sha1 = "0.3.0"
 signal-hook = { version = "0.3.17" }
 directories = "6.0.0"
 walkdir = { version = "2.5.0", optional = true }

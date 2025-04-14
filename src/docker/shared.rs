@@ -2,7 +2,6 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Output};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
 use std::{env, fs, time};
 
 use super::custom::{Dockerfile, PreBuild};
@@ -531,38 +530,7 @@ pub const DEFAULT_TIMEOUT: u32 = 2;
 // instant kill in case of a non-graceful exit
 pub const NO_TIMEOUT: u32 = 0;
 
-// we need to specify drops for the containers, but we
-// also need to ensure the drops are called on a
-// termination handler. we use an atomic bool to ensure
-// that the drop only gets called once, even if we have
-// the signal handle invoked multiple times or it fails.
-#[allow(missing_debug_implementations)]
-pub struct ChildContainer {
-    info: Option<ChildContainerInfo>,
-    exists: AtomicBool,
-}
-
-// Using a mutex to provide interior mutability instead of static mut
-pub(crate) static CHILD_CONTAINER: Mutex<ChildContainer> = Mutex::new(ChildContainer::new());
-
-// Helper function to access CHILD_CONTAINER without creating a reference to static
-fn with_child_container<F, R>(f: F) -> R
-where
-    F: FnOnce(&mut ChildContainer) -> R,
-{
-    // SAFETY: This avoids creating a reference to the static by using addr_of!
-    // We're still using the Mutex for synchronization
-    unsafe {
-        // Get a raw pointer to the static without creating a reference
-        let ptr = std::ptr::addr_of!(CHILD_CONTAINER);
-        // Dereference and lock (without creating a reference to the static)
-        let mut guard = (*ptr)
-            .lock()
-            .expect("Failed to acquire child container lock");
-        // Call the function with a mutable reference to the contained value
-        f(&mut guard)
-    }
-}
+pub(crate) static mut CHILD_CONTAINER: ChildContainer = ChildContainer::new();
 
 // the lack of [MessageInfo] is because it'd require a mutable reference,
 // since we don't need the functionality behind the [MessageInfo], we can just store the basic
@@ -573,6 +541,17 @@ pub(crate) struct ChildContainerInfo {
     timeout: u32,
     color_choice: ColorChoice,
     verbosity: Verbosity,
+}
+
+// we need to specify drops for the containers, but we
+// also need to ensure the drops are called on a
+// termination handler. we use an atomic bool to ensure
+// that the drop only gets called once, even if we have
+// the signal handle invoked multiple times or it fails.
+#[allow(missing_debug_implementations)]
+pub struct ChildContainer {
+    info: Option<ChildContainerInfo>,
+    exists: AtomicBool,
 }
 
 impl Default for ChildContainer {
@@ -590,7 +569,10 @@ impl ChildContainer {
     }
 
     pub fn create(engine: Engine, name: String) -> Result<()> {
-        with_child_container(|container| {
+        // SAFETY: Using raw pointer to access the static without creating a reference
+        unsafe {
+            let ptr = std::ptr::addr_of_mut!(CHILD_CONTAINER);
+            let container = &mut *ptr;
             if !container.exists.swap(true, Ordering::SeqCst) {
                 container.info = Some(ChildContainerInfo {
                     engine,
@@ -603,34 +585,41 @@ impl ChildContainer {
             } else {
                 eyre::bail!("attempted to create already existing container.");
             }
-        })
+        }
     }
 
     // the static functions have been placed by the internal functions to
     // verify the internal functions are wrapped in atomic load/stores.
 
-    pub fn exists(&self) -> bool {
+    fn exists(&self) -> bool {
         self.exists.load(Ordering::SeqCst)
     }
 
     pub fn exists_static() -> bool {
-        // SAFETY: an atomic load.
-        with_child_container(|container| container.exists())
+        // SAFETY: Using atomic load without creating a reference to the static
+        unsafe {
+            let ptr = std::ptr::addr_of!(CHILD_CONTAINER);
+            (*ptr).exists.load(Ordering::SeqCst)
+        }
     }
 
     // when the `docker run` command finished.
     // the container has already exited, so no cleanup required.
-    pub fn exit(&mut self) {
+    fn exit(&mut self) {
         self.exists.store(false, Ordering::SeqCst);
     }
 
     pub fn exit_static() {
-        // SAFETY: an atomic store.
-        with_child_container(|container| container.exit());
+        // SAFETY: Using raw pointer to access the static without creating a reference
+        unsafe {
+            let ptr = std::ptr::addr_of_mut!(CHILD_CONTAINER);
+            let container = &mut *ptr;
+            container.exit();
+        }
     }
 
     // when the `docker exec` command finished.
-    pub fn finish(&mut self, is_tty: bool, msg_info: &mut MessageInfo) {
+    fn finish(&mut self, is_tty: bool, msg_info: &mut MessageInfo) {
         // relax the no-timeout and lack of output
         // ensure we have atomic ordering
         if self.exists() {
@@ -649,8 +638,12 @@ impl ChildContainer {
     }
 
     pub fn finish_static(is_tty: bool, msg_info: &mut MessageInfo) {
-        // SAFETY: internally guarded by an atomic load.
-        with_child_container(|container| container.finish(is_tty, msg_info));
+        // SAFETY: Using raw pointer to access the static without creating a reference
+        unsafe {
+            let ptr = std::ptr::addr_of_mut!(CHILD_CONTAINER);
+            let container = &mut *ptr;
+            container.finish(is_tty, msg_info);
+        }
     }
 
     // terminate the container early. leaves the struct in a valid
@@ -1557,8 +1550,10 @@ pub const PATH_HASH_SHORT: usize = 5;
 pub const PATH_HASH_UNIQUE: usize = 10;
 
 fn path_digest(path: &Path) -> Result<const_sha1::Digest> {
-    let buffer = const_sha1::ConstBuffer::from_slice(path.to_utf8()?.as_bytes());
-    Ok(const_sha1::sha1(&buffer))
+    // let buffer = const_sha1::ConstBuffer::from_slice(path.to_utf8()?.as_bytes());
+    //Ok(const_sha1::sha1(&buffer))
+    let digest = const_sha1::sha1(path.to_utf8()?.as_bytes());
+    Ok(digest)
 }
 
 pub fn path_hash(path: &Path, count: usize) -> Result<String> {
