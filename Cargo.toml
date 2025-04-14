@@ -36,7 +36,7 @@ eyre = "0.6.12"
 thiserror = "2.0.12"
 home = "=0.5.9"
 rustc_version = "0.4.1"
-toml = "=0.7.8"
+toml = "0.8.20"
 which = { version = "7.0.3", default-features = false }
 shell-escape = "0.1.5"
 serde = { version = "1.0.219", features = ["derive"] }
