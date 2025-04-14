@@ -53,7 +53,7 @@ semver = "1.0.26"
 is_ci = "1.2.0"
 
 [target.'cfg(not(windows))'.dependencies]
-nix  = { version = "0.27.1", default-features = false, features = ["user"] }
+nix  = { version = "0.28.0", default-features = false, features = ["user"] }
 libc = "0.2.171"
 
 [target.'cfg(windows)'.dependencies]
