@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::io::{self, BufRead, Read, Write};
+use std::io::{self, BufRead, IsTerminal, Read, Write};
 use std::path::Path;
 use std::process::{Command, ExitStatus};
 use std::{env, fs, time};
@@ -774,7 +774,7 @@ pub(crate) fn run(
     }
 
     docker.arg("-d");
-    let is_tty = io::Stdin::is_atty() && io::Stdout::is_atty() && io::Stderr::is_atty();
+    let is_tty = std::io::stdin().is_terminal() && io::Stdout::is_atty() && io::Stderr::is_atty();
     if is_tty {
         docker.arg("-t");
     }

@@ -1,4 +1,5 @@
 use std::io;
+use std::io::IsTerminal;
 
 use clap::{Args, Subcommand};
 use cross::docker::ImagePlatform;
@@ -327,7 +328,7 @@ pub fn create_persistent_volume(
     docker.arg("--rm");
     docker.args(["-v", &format!("{}:{}", volume_id, mount_prefix)]);
     docker.arg("-d");
-    let is_tty = io::Stdin::is_atty() && io::Stdout::is_atty() && io::Stderr::is_atty();
+    let is_tty = std::io::stdin().is_terminal() && io::Stdout::is_atty() && io::Stderr::is_atty();
     if is_tty {
         docker.arg("-t");
     }

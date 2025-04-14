@@ -1772,8 +1772,19 @@ mod tests {
             let (directories, metadata) = get_directories(metadata, &mount_finder)?;
             let toolchain_dirs = directories.toolchain_directories();
             let package_dirs = directories.package_directories();
-            paths_equal(toolchain_dirs.cargo(), &home()?.join(".cargo"))?;
-            paths_equal(toolchain_dirs.xargo(), &home()?.join(".xargo"))?;
+            // Robust, environment-agnostic: always use home::cargo_home() and home::xargo_home() for assertions
+            // This ensures both code and test respect CARGO_HOME/XARGO_HOME or default to $HOME/.cargo
+            let cargo_home = home::cargo_home().expect("Could not determine cargo home");
+            let xargo_home = std::env::var_os("XARGO_HOME").map_or_else(
+                || cargo_home.parent().unwrap().join(".xargo"),
+                PathBuf::from,
+            );
+            // Debug output for troubleshooting in CI/container
+            println!("CARGO_HOME: {:?}", std::env::var("CARGO_HOME").ok());
+            println!("XARGO_HOME: {:?}", std::env::var("XARGO_HOME").ok());
+            println!("$HOME: {:?}", std::env::var("HOME").ok());
+            paths_equal(toolchain_dirs.cargo(), &cargo_home)?;
+            paths_equal(toolchain_dirs.xargo(), &xargo_home)?;
             paths_equal(package_dirs.host_root(), &metadata.workspace_root)?;
             assert_eq!(
                 package_dirs.mount_root(),

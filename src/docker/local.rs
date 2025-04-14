@@ -1,4 +1,5 @@
 use std::io;
+use std::io::IsTerminal;
 use std::path::Path;
 use std::process::{Command, ExitStatus};
 use std::sync::atomic::Ordering;
@@ -136,7 +137,7 @@ pub(crate) fn run(
         ]);
     }
 
-    if io::Stdin::is_atty() && io::Stdout::is_atty() && io::Stderr::is_atty() {
+    if std::io::stdin().is_terminal() && io::Stdout::is_atty() && io::Stderr::is_atty() {
         docker.arg("-t");
     }
 
