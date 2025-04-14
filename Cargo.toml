@@ -47,7 +47,7 @@ signal-hook = { version = "0.3.17" }
 directories = "6.0.0"
 walkdir = { version = "2.5.0", optional = true }
 tempfile = "3.19.1"
-owo-colors = { version = "4.0.0", features = ["supports-colors"] }
+owo-colors = { version = "4.1.0", features = ["supports-colors"] }
 semver = "1.0.26"
 is_ci = "1.2.0"
 
